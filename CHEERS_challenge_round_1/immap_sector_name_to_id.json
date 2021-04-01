@@ -1,0 +1,13 @@
+{
+    "Agriculture": 0,
+    "Cross": 1,
+    "Education": 2,
+    "Food Security": 3,
+    "Health": 4,
+    "Livelihoods": 5,
+    "Logistics": 6,
+    "Nutrition": 7,
+    "Protection": 8,
+    "Shelter": 9,
+    "WASH": 10
+}
