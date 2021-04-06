@@ -16,16 +16,35 @@ tokenizer = AutoTokenizer.from_pretrained('bert-base-cased')
 
 class SentenceSet(Dataset):
     """Base dataset"""
-    def __init__(self, sents_path, docs_path, preproc_func, ret_func, train):
+    
+    mappings = None
+    
+    def __init__(self, sents_path, docs_path, preproc_func, ret_func, train=True):
         """
-           *_path: path to the file
+           path: path to the file
            preproc_func: the preprocessing function applied to the raw dataset
            ret_func: determines which features are returned
-           train: true if training dataset
         """
         super(SentenceSet, self).__init__()
+        if train:
+            self.extract_mappings(sents_path, docs_path)
         self.ret_func = ret_func
-        self.data = preproc_func(sents_path, docs_path, train)
+        self.data = preproc_func(sents_path, docs_path, self.mappings, train)
+        
+    @classmethod
+    def extract_mappings(cls, sents_path, docs_path):
+        cls.mappings = {}
+        sents = pd.read_csv(sents_path)
+        docs = pd.read_csv(docs_path)
+        project_name_mapping = dict((o,idx) for idx, o in enumerate(set(docs["project_name"])))
+        country_code_mapping = dict((o,idx) for idx, o in enumerate(set(docs["country_code"])))
+        docs["doc_url"].fillna("",inplace=True)
+        url_set = set(docs["doc_url"].apply(lambda x: urlparse(x).netloc))
+        document_url_mapping = dict((o,idx) for idx, o in enumerate(url_set))
+        cls.mappings["project_name_mapping"] = project_name_mapping
+        cls.mappings["country_code_mapping"] = country_code_mapping
+        cls.mappings["url_set"] = url_set
+        cls.mappings["document_url_mapping"] = document_url_mapping
         
     def __len__(self):
         return len(self.data)
@@ -35,8 +54,10 @@ class SentenceSet(Dataset):
 
 
 
-def preprocess(sentences_path, documents_path, train=True):
+def preprocess(sentences_path, documents_path, mappings, train=True):
     """preprocessor function"""
+    if mappings == None:
+        raise BaseException("first create training dataset")
     
     # load data    
     sents = pd.read_csv(sentences_path, converters={'sector_ids': literal_eval})
@@ -47,17 +68,13 @@ def preprocess(sentences_path, documents_path, train=True):
     
     # change nominal features to indices
     docs["doc_url"].fillna("",inplace=True)
-    project_name_mapping = dict((o,idx) for idx, o in enumerate(set(docs["project_name"])))
-    country_code_mapping = dict((o,idx) for idx, o in enumerate(set(docs["country_code"])))
-    url_set = set(docs["doc_url"].apply(lambda x: urlparse(x).netloc))
-    document_url_mapping = dict((o,idx) for idx, o in enumerate(url_set))
-    docs.replace(project_name_mapping, inplace=True)
-    docs.replace(country_code_mapping, inplace=True)
-    docs["url"] = docs["doc_url"].apply(lambda x: urlparse(x).netloc).replace(document_url_mapping)
+    docs.replace(mappings["project_name_mapping"], inplace=True)
+    docs.replace(mappings["country_code_mapping"], inplace=True)
+    docs["url"] = docs["doc_url"].apply(lambda x: urlparse(x).netloc).replace(mappings["document_url_mapping"])
     if train == False:
         for item in docs.iterrows():
-            if urlparse(item[1]["doc_url"]).netloc not in url_set:
-                docs.loc[item[0], "url"] = len(url_set)
+            if urlparse(item[1]["doc_url"]).netloc not in mappings["url_set"]:
+                docs.loc[item[0], "url"] = len(mappings["url_set"])
     
     
     # feature exctractor
@@ -66,7 +83,8 @@ def preprocess(sentences_path, documents_path, train=True):
     sents["sentence_lenght"] = sents["sentence_text"].apply(len).apply(np.log)
     
     # tokenization
-    sents["tokenized_text"] = sents["sentence_text"].apply(lambda x: tokenizer(x, max_length=512, truncation="longest_first")["input_ids"])
+    sents["tokenized_text"] = sents["sentence_text"].apply(lambda x:\
+                                tokenizer(x, max_length=512, truncation="longest_first")["input_ids"])
     sents.drop("sentence_text", axis="columns", inplace= True)
     
     # remove unnecessary features
