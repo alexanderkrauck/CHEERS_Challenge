@@ -132,5 +132,9 @@ dmypy.json
 data_round_1/
 preprocessed_data/
 
+#Logs and Checkpoints
+logs/
+checkpoints/
+
 #DS_Store
 .DS_Store
