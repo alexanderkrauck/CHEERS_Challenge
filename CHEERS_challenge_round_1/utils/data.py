@@ -11,6 +11,9 @@ from ast import literal_eval
 import itertools
 from urllib.parse import urlparse
 from transformers import AutoTokenizer
+import torch
+from torch.utils.data import Dataset
+from torch import nn
 tokenizer = AutoTokenizer.from_pretrained('bert-base-cased')
 
 
@@ -97,7 +100,49 @@ def preprocess(sentences_path, documents_path, mappings, train=True):
     
     return joint
 
+    
 
+class IsRelevantDataset(Dataset):
+    def __init__(self, joint_dataframe: pd.DataFrame, device="cpu", dimensions = None):
+        self.X = joint_dataframe[["sentence_position", "sentence_length", "tokenized_sentence", "project_name", "country_code", "url", "text_length", "sentence_count"]].to_numpy()
+        self.Y = joint_dataframe["is_relevant"].to_numpy()
+        self.device = device
+        
+        if dimensions is None:
+            self.dimensions = ((1, (4, len(set(self.X[:,3])), len(set(self.X[:,4])), len(set(self.X[:,5])))), 2)
+        else:
+            self.dimensions = dimensions
+        
+    def __len__(self):
+        return len(self.Y)
+
+    
+    def __getitem__(self, idx, x_one_hot = True, x_train_ready = True):
+        
+        """
+        Note that x_train_ready implies x_one_hot
+        """
+        x_tmp = self.X[idx]
+        metric_x = torch.tensor([x_tmp[0], x_tmp[1], x_tmp[6], x_tmp[7]], device=self.device)#numerical features
+        sentence_x = torch.tensor(x_tmp[2], device=self.device, dtype=torch.long)#bert features
+        sentence_x = torch.cat((sentence_x, torch.zeros(512 - sentence_x.shape[0], device=self.device, dtype= torch.long)))
+        
+        #one hot features:
+        project_name_x = torch.tensor(x_tmp[3], device=self.device, dtype=torch.long)
+        country_code_x = torch.tensor(x_tmp[4], device=self.device, dtype=torch.long)
+        url_x = torch.tensor(x_tmp[5], device=self.device)
+        
+        y = torch.tensor(self.Y[idx], device=self.device, dtype=torch.long)
+
+        if x_train_ready or x_one_hot:
+            project_name_x = nn.functional.one_hot(project_name_x, num_classes = self.dimensions[0][1][1])
+            country_code_x = nn.functional.one_hot(country_code_x, num_classes = self.dimensions[0][1][2])
+            url_x = nn.functional.one_hot(url_x, num_classes = self.dimensions[0][1][3])
+        if x_train_ready:
+            x_other = torch.cat((metric_x, project_name_x, country_code_x, url_x), dim=0)
+            return (sentence_x, x_other), y
+        
+        return (sentence_x, (metric_x, project_name_x, country_code_x, url_x)), y
 
 
 
