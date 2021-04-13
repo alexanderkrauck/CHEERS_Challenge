@@ -137,7 +137,7 @@ class RelevantDataset(Dataset):
         if "train" in flag:
             joint_dataframe = pd.read_hdf("./preprocessed_data/train_joint.h5", key="s")
         if "val" in flag:
-            joint_dataframe = pd.read_hdf("./preprocessed_data/val_joint.h5", key="s")
+            joint_dataframe = pd.read_hdf("./preprocessed_data/validation_joint.h5", key="s")
         if "test" in flag:
             joint_dataframe = pd.read_hdf("./preprocessed_data/test_joint.h5", key="s")
         if "only_relevant" in flag:
