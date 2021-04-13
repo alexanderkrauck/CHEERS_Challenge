@@ -129,17 +129,17 @@ def preprocess():
 
 class RelevantDataset(Dataset):
     def __init__(self, device=device, dimensions = None, **flag):
-    """flag: training: train=True
+        """flag: training: train=True
              validation: val=True
              test: test=True
              samples with is_relevant == True: only_relevant=True
-     """
+        """
         if "train" in flag:
-            joint_dataframe = pd.read_hdf("preprocessed_data/train_joint.h5", key="s")
+            joint_dataframe = pd.read_hdf("./preprocessed_data/train_joint.h5", key="s")
         if "val" in flag:
-            joint_dataframe = pd.read_hdf("preprocessed_data/val_joint.h5", key="s")
+            joint_dataframe = pd.read_hdf("./preprocessed_data/val_joint.h5", key="s")
         if "test" in flag:
-            joint_dataframe = pd.read_hdf("preprocessed_data/test_joint.h5", key="s")
+            joint_dataframe = pd.read_hdf("./preprocessed_data/test_joint.h5", key="s")
         if "only_relevant" in flag:
             joint_dataframe = joint_dataframe[joint_dataframe["is_relevant"]==True]
         self.X = joint_dataframe[["sentence_position", "sentence_length", "tokenized_sentence", "project_name", "country_code", "url", "text_length", "sentence_count"]].to_numpy()
@@ -183,9 +183,6 @@ class RelevantDataset(Dataset):
         return (sentence_x, (metric_x, project_name_x, country_code_x, url_x)), y
         
       
-      
-preprocess()
-    
 
 class IsRelevantDataset(Dataset):
     def __init__(self, joint_dataframe: pd.DataFrame, device="cpu", dimensions = None):
