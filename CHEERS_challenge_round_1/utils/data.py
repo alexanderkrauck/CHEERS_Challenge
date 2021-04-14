@@ -18,6 +18,8 @@ from torch.utils.data import Dataset
 from torch import nn
 tokenizer = AutoTokenizer.from_pretrained('bert-base-cased')
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
 
 def preprocess(in_folder="CHEERS_challenge_round_1",
                out_folder="preprocessed_data/"):
@@ -98,6 +100,14 @@ def preprocess(in_folder="CHEERS_challenge_round_1",
     docs_train["sentence_count"] = s_c_scaler.transform(docs_train["sentence_count"])
     sents_train["sentence_length"] = s_l_scaler.transform(sents_train["sentence_length"])
     sents_train["sentence_position"] = s_p_scaler.transform(sents_train["sentence_position"])
+    docs_val["text_length"] = t_l_scaler.transform(docs_val["text_length"])
+    docs_val["sentence_count"] = s_c_scaler.transform(docs_val["sentence_count"])
+    sents_val["sentence_length"] = s_l_scaler.transform(sents_val["sentence_length"])
+    sents_val["sentence_position"] = s_p_scaler.transform(sents_val["sentence_position"])
+    docs_test["text_length"] = t_l_scaler.transform(docs_test["text_length"])
+    docs_test["sentence_count"] = s_c_scaler.transform(docs_test["sentence_count"])
+    sents_test["sentence_length"] = s_l_scaler.transform(sents_test["sentence_length"])
+    sents_test["sentence_position"] = s_p_scaler.transform(sents_test["sentence_position"])
     
     # tokenization
     sents_train["tokenized_sentence"] = sents_train["sentence_text"].apply(lambda x:\
@@ -136,81 +146,22 @@ def preprocess(in_folder="CHEERS_challenge_round_1",
 
 
 class RelevantDataset(Dataset):
-    def __init__(
-        self,
-        dataset: str,
-        target_mode: str = "isrelevant",
-        device: str ="cpu",
-        dimensions: tuple = None,
-        load_only_relevant: bool = False
-    ):
-        """Constructor Function
-
-        Parameters
-        ----------
-        dataset : str
-            Decides which dataset will be loaded. Can be either "train", "test" or "val".
-        target_mode : str
-            Decides which target is returned in the __getitem__ function. Can be either "isrelevant", "sentencetype" or "both".TODO:!!!!
-        device : str
-            Decides on which device the torch tensors will be returned.
-        dimensions : tuple
-            The dimensions to use for returning one hot encodings.
-        load_only_relevant : bool
-            If true the Dataset will only contain samples with the "relevant" target equal True.
-        """ 
-        if dataset == "train":
+    def __init__(self, device=device, dimensions = None, **flag):
+        """flag: training: train=True
+             validation: val=True
+             test: test=True
+             samples with is_relevant == True: only_relevant=True
+        """
+        if "train" in flag:
             joint_dataframe = pd.read_hdf("./preprocessed_data/train_joint.h5", key="s")
-        elif dataset == "val":
+        if "val" in flag:
             joint_dataframe = pd.read_hdf("./preprocessed_data/validation_joint.h5", key="s")
-            if not dimensions:
-                raise TypeError("Dimensions attribute is required for dataset type \"validation\".")
-        elif dataset == "test":
+        if "test" in flag:
             joint_dataframe = pd.read_hdf("./preprocessed_data/test_joint.h5", key="s")
-            if not dimensions:
-                raise TypeError("Dimensions attribute is required for dataset type \"test\".")
-
-<<<<<<< HEAD
-    
-    def __getitem__(self, idx, x_one_hot = True, x_train_ready = True):
-        
-        """
-        Note that x_train_ready implies x_one_hot
-        """
-        x_tmp = self.X[idx]
-        metric_x = torch.tensor([x_tmp[0], x_tmp[1], x_tmp[6], x_tmp[7]], device=self.device)#numerical features
-        sentence_x = torch.tensor(x_tmp[2], device=self.device, dtype=torch.long)#bert features
-        sentence_x = torch.cat((sentence_x, torch.zeros(512 - sentence_x.shape[0], device=self.device, dtype= torch.long)))
-        
-        #one hot features:
-        project_name_x = torch.tensor(x_tmp[3], device=self.device, dtype=torch.long)
-        country_code_x = torch.tensor(x_tmp[4], device=self.device, dtype=torch.long)
-        url_x = torch.tensor(x_tmp[5], device=self.device)
-        
-        y = torch.tensor(self.Y[idx], device=self.device, dtype=torch.long)
-
-        if x_train_ready or x_one_hot:
-            project_name_x = nn.functional.one_hot(project_name_x, num_classes = self.dimensions[0][1][1])
-            country_code_x = nn.functional.one_hot(country_code_x, num_classes = self.dimensions[0][1][2])
-            url_x = nn.functional.one_hot(url_x, num_classes = self.dimensions[0][1][3])
-        if x_train_ready:
-            x_other = torch.cat((metric_x, project_name_x, country_code_x, url_x), dim=0)
-            return (sentence_x, x_other), y
-        
-        return (sentence_x, (metric_x, project_name_x, country_code_x, url_x)), y
-        
-        
-        
-class IsRelevantDataset(Dataset):
-    def __init__(self, joint_dataframe: pd.DataFrame, device="cpu", dimensions = None):
-=======
-        if load_only_relevant:
+        if "only_relevant" in flag:
             joint_dataframe = joint_dataframe[joint_dataframe["is_relevant"]==True]
-
->>>>>>> 84e12eab92fdb1870de1d68b7be38c41e04a90c0
         self.X = joint_dataframe[["sentence_position", "sentence_length", "tokenized_sentence", "project_name", "country_code", "url", "text_length", "sentence_count"]].to_numpy()
-        if target_mode == "isrelevant":
-            self.Y = joint_dataframe["is_relevant"].to_numpy()
+        self.Y = joint_dataframe["is_relevant"].to_numpy()
         self.device = device
         
         if dimensions is None:
@@ -248,3 +199,51 @@ class IsRelevantDataset(Dataset):
             return (sentence_x, x_other), y
         
         return (sentence_x, (metric_x, project_name_x, country_code_x, url_x)), y
+        
+        
+        
+class IsRelevantDataset(Dataset):
+    def __init__(self, joint_dataframe: pd.DataFrame, device="cpu", dimensions = None):
+        self.X = joint_dataframe[["sentence_position", "sentence_length", "tokenized_sentence", "project_name", "country_code", "url", "text_length", "sentence_count"]].to_numpy()
+        self.Y = joint_dataframe["is_relevant"].to_numpy()
+        self.device = device
+        
+        if dimensions is None:
+            self.dimensions = ((1, (4, len(set(self.X[:,3])), len(set(self.X[:,4])), len(set(self.X[:,5])))), 2)
+        else:
+            self.dimensions = dimensions
+        
+    def __len__(self):
+        return len(self.Y)
+
+    
+    def __getitem__(self, idx, x_one_hot = True, x_train_ready = True):
+        
+        """
+        Note that x_train_ready implies x_one_hot
+        """
+        x_tmp = self.X[idx]
+        metric_x = torch.tensor([x_tmp[0], x_tmp[1], x_tmp[6], x_tmp[7]], device=self.device)#numerical features
+        sentence_x = torch.tensor(x_tmp[2], device=self.device, dtype=torch.long)#bert features
+        sentence_x = torch.cat((sentence_x, torch.zeros(512 - sentence_x.shape[0], device=self.device, dtype= torch.long)))
+        
+        #one hot features:
+        project_name_x = torch.tensor(x_tmp[3], device=self.device, dtype=torch.long)
+        country_code_x = torch.tensor(x_tmp[4], device=self.device, dtype=torch.long)
+        url_x = torch.tensor(x_tmp[5], device=self.device)
+        
+        y = torch.tensor(self.Y[idx], device=self.device, dtype=torch.long)
+
+        if x_train_ready or x_one_hot:
+            project_name_x = nn.functional.one_hot(project_name_x, num_classes = self.dimensions[0][1][1])
+            country_code_x = nn.functional.one_hot(country_code_x, num_classes = self.dimensions[0][1][2])
+            url_x = nn.functional.one_hot(url_x, num_classes = self.dimensions[0][1][3])
+        if x_train_ready:
+            x_other = torch.cat((metric_x, project_name_x, country_code_x, url_x), dim=0)
+            return (sentence_x, x_other), y
+        
+        return (sentence_x, (metric_x, project_name_x, country_code_x, url_x)), y
+
+
+
+
