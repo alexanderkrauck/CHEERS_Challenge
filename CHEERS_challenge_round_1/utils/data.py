@@ -3,6 +3,7 @@
 
 import numpy as np
 import pandas as pd
+from sklearn.preprocessing import StandardScaler
 from torch.utils.data import Dataset, DataLoader
 import torch
 import matplotlib.pyplot as plt
@@ -18,16 +19,29 @@ from torch import nn
 tokenizer = AutoTokenizer.from_pretrained('bert-base-cased')
 
 
-def preprocess():
-    """preprocessor function"""
+def preprocess(in_folder="CHEERS_challenge_round_1",
+               out_folder="preprocessed_data/"):
+    """
+    Preprocesses the raw data downloaded as the 
+    CHEERS_challenge_round_1 folder.
+    
+    Parameters
+    ----------
+    in_folder : Path or str
+                Path to the input data folder.
+    out_folder : Path or str
+                Path to the output data folder
+    
+    Returns
+    -------
+    """
     # load data    
-    DIR = "CHEERS_challenge_round_1"
-    sents_train = pd.read_csv(DIR+"/sentences_en_train.csv", converters={'sector_ids': literal_eval})
-    sents_val = pd.read_csv(DIR+"/sentences_en_val.csv", converters={'sector_ids': literal_eval})
-    sents_test = pd.read_csv(DIR+"/sentences_en_test.csv", converters={'sector_ids': literal_eval})
-    docs_train = pd.read_csv(DIR+"/documents_en_train.csv")
-    docs_val = pd.read_csv(DIR+"/documents_en_val.csv")
-    docs_test = pd.read_csv(DIR+"/documents_en_test.csv")
+    sents_train = pd.read_csv(in_folder+"/sentences_en_train.csv", converters={'sector_ids': literal_eval})
+    sents_val = pd.read_csv(in_folder+"/sentences_en_val.csv", converters={'sector_ids': literal_eval})
+    sents_test = pd.read_csv(in_folder+"/sentences_en_test.csv", converters={'sector_ids': literal_eval})
+    docs_train = pd.read_csv(in_folder+"/documents_en_train.csv")
+    docs_val = pd.read_csv(in_folder+"/documents_en_val.csv")
+    docs_test = pd.read_csv(in_folder+"/documents_en_test.csv")
     docs_train = docs_train.copy().set_index("doc_id")
     docs_val = docs_val.copy().set_index("doc_id")
     docs_test = docs_test.copy().set_index("doc_id")
@@ -74,20 +88,16 @@ def preprocess():
     sents_val["sentence_length"] = sents_val["sentence_text"].apply(len).apply(np.log)
     sents_test["sentence_length"] = sents_test["sentence_text"].apply(len).apply(np.log)
     
-    t_l_mean = docs_train["text_length"].mean()
-    t_l_std = docs_train["text_length"].std()
-    s_c_mean = docs_train["sentence_count"].mean()
-    s_c_std = docs_train["sentence_count"].std()
-    s_l_mean = sents_train["sentence_length"].mean()
-    s_l_std = sents_train["sentence_length"].std()
-    s_p_mean = sents_train["sentence_position"].mean()
-    s_p_std = sents_train["sentence_position"].std()
+    # normalization
+    t_l_scaler = StandardScaler().fit(docs_train["text_length"])
+    s_c_scaler = StandardScaler().fit(docs_train["sentence_count"])
+    s_l_scaler = StandardScaler().fit(sents_train["sentence_length"])
+    s_p_scaler = StandardScaler().fit(sents_train["sentence_position"])
     
-    docs_train["text_length"] = docs_train["text_length"].apply(lambda x: (x-t_l_mean)/t_l_std)
-    docs_train["sentence_count"] = docs_train["sentence_count"].apply(lambda x: (x-s_c_mean)/s_c_std)
-    sents_train["sentence_length"] = sents_train["sentence_length"].apply(lambda x: (x-s_l_mean)/s_l_std)
-    sents_train["sentence_position"] = sents_train["sentence_position"].apply(lambda x: (x-s_p_mean)/s_p_std)
-    
+    docs_train["text_length"] = t_l_scaler.transform(docs_train["text_length"])
+    docs_train["sentence_count"] = s_c_scaler.transform(docs_train["sentence_count"])
+    sents_train["sentence_length"] = s_l_scaler.transform(sents_train["sentence_length"])
+    sents_train["sentence_position"] = s_p_scaler.transform(sents_train["sentence_position"])
     
     # tokenization
     sents_train["tokenized_sentence"] = sents_train["sentence_text"].apply(lambda x:\
@@ -116,13 +126,13 @@ def preprocess():
     joint_val = sents_val.join(docs_val, on="doc_id")
     joint_test = sents_test.join(docs_test, on="doc_id")
     
-    if os.path.exists("preprocessed_data/"):
-        shutil.rmtree("preprocessed_data/")
-    os.mkdir("preprocessed_data/")
+    if os.path.exists(out_folder):
+        shutil.rmtree(out_folder)
+    os.mkdir(out_folder)
     
-    joint_train.to_hdf(os.path.join("preprocessed_data", "train_joint.h5"), key='s')
-    joint_val.to_hdf(os.path.join("preprocessed_data", "validation_joint.h5"), key='s')
-    joint_test.to_hdf(os.path.join("preprocessed_data", "test_joint.h5"), key='s')
+    joint_train.to_hdf(os.path.join(out_folder, "train_joint.h5"), key='s')
+    joint_val.to_hdf(os.path.join(out_folder, "validation_joint.h5"), key='s')
+    joint_test.to_hdf(os.path.join(out_folder, "test_joint.h5"), key='s')
 
 
 class RelevantDataset(Dataset):
@@ -160,9 +170,44 @@ class RelevantDataset(Dataset):
             if not dimensions:
                 raise TypeError("Dimensions attribute is required for dataset type \"test\".")
 
+<<<<<<< HEAD
+    
+    def __getitem__(self, idx, x_one_hot = True, x_train_ready = True):
+        
+        """
+        Note that x_train_ready implies x_one_hot
+        """
+        x_tmp = self.X[idx]
+        metric_x = torch.tensor([x_tmp[0], x_tmp[1], x_tmp[6], x_tmp[7]], device=self.device)#numerical features
+        sentence_x = torch.tensor(x_tmp[2], device=self.device, dtype=torch.long)#bert features
+        sentence_x = torch.cat((sentence_x, torch.zeros(512 - sentence_x.shape[0], device=self.device, dtype= torch.long)))
+        
+        #one hot features:
+        project_name_x = torch.tensor(x_tmp[3], device=self.device, dtype=torch.long)
+        country_code_x = torch.tensor(x_tmp[4], device=self.device, dtype=torch.long)
+        url_x = torch.tensor(x_tmp[5], device=self.device)
+        
+        y = torch.tensor(self.Y[idx], device=self.device, dtype=torch.long)
+
+        if x_train_ready or x_one_hot:
+            project_name_x = nn.functional.one_hot(project_name_x, num_classes = self.dimensions[0][1][1])
+            country_code_x = nn.functional.one_hot(country_code_x, num_classes = self.dimensions[0][1][2])
+            url_x = nn.functional.one_hot(url_x, num_classes = self.dimensions[0][1][3])
+        if x_train_ready:
+            x_other = torch.cat((metric_x, project_name_x, country_code_x, url_x), dim=0)
+            return (sentence_x, x_other), y
+        
+        return (sentence_x, (metric_x, project_name_x, country_code_x, url_x)), y
+        
+        
+        
+class IsRelevantDataset(Dataset):
+    def __init__(self, joint_dataframe: pd.DataFrame, device="cpu", dimensions = None):
+=======
         if load_only_relevant:
             joint_dataframe = joint_dataframe[joint_dataframe["is_relevant"]==True]
 
+>>>>>>> 84e12eab92fdb1870de1d68b7be38c41e04a90c0
         self.X = joint_dataframe[["sentence_position", "sentence_length", "tokenized_sentence", "project_name", "country_code", "url", "text_length", "sentence_count"]].to_numpy()
         if target_mode == "isrelevant":
             self.Y = joint_dataframe["is_relevant"].to_numpy()
