@@ -162,20 +162,42 @@ def preprocess(in_folder:str="CHEERS_challenge_round_1",out_folder:str="preproce
 
 
 class RelevantDataset(Dataset):
-    def __init__(self, device=device, dimensions = None, **flag):
-        """flag: training: train=True
-             validation: val=True
-             test: test=True
-             samples with is_relevant == True: only_relevant=True
-        """
-        if "train" in flag:
+    def __init__(
+        self,
+        dataset: str,
+        target_mode: str = "isrelevant",
+        device: str ="cpu",
+        dimensions: tuple = None,
+        load_only_relevant: bool = False
+    ):
+        """Constructor Function
+        Parameters
+        ----------
+        dataset : str
+            Decides which dataset will be loaded. Can be either "train", "test" or "val".
+        target_mode : str
+            Decides which target is returned in the __getitem__ function. Can be either "isrelevant", "sentencetype" or "both".TODO:!!!!
+        device : str
+            Decides on which device the torch tensors will be returned.
+        dimensions : tuple
+            The dimensions to use for returning one hot encodings.
+        load_only_relevant : bool
+            If true the Dataset will only contain samples with the "relevant" target equal True.
+        """ 
+
+        if dataset == "train":
             joint_dataframe = pd.read_hdf("./preprocessed_data/train_joint.h5", key="s")
-        if "val" in flag:
+        if dataset == "val":
             joint_dataframe = pd.read_hdf("./preprocessed_data/validation_joint.h5", key="s")
-        if "test" in flag:
+            if not dimensions:
+                raise TypeError("Dimensions attribute is required for dataset type \"validation\".")
+        if dataset == "test":
             joint_dataframe = pd.read_hdf("./preprocessed_data/test_joint.h5", key="s")
-        if "only_relevant" in flag:
+            if not dimensions:
+                raise TypeError("Dimensions attribute is required for dataset type \"test\".")
+        if load_only_relevant:
             joint_dataframe = joint_dataframe[joint_dataframe["is_relevant"]==True]
+
         self.X = joint_dataframe[["sentence_position", "sentence_length", "tokenized_sentence", "project_name", "country_code", "url", "text_length", "sentence_count"]].to_numpy()
         self.Y = joint_dataframe["is_relevant"].to_numpy()
         self.device = device
