@@ -9,6 +9,7 @@ import torch
 import matplotlib.pyplot as plt
 from IPython.display import display, HTML
 import os
+from pathlib import Path
 from ast import literal_eval
 import itertools
 from urllib.parse import urlparse
@@ -21,8 +22,7 @@ tokenizer = AutoTokenizer.from_pretrained('bert-base-cased')
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
-def preprocess(in_folder="CHEERS_challenge_round_1",
-               out_folder="preprocessed_data/"):
+def preprocess(in_folder:str="CHEERS_challenge_round_1",out_folder:str="preprocessed_data/", verbose: int = 1):
     """
     Preprocesses the raw data downloaded as the 
     CHEERS_challenge_round_1 folder.
@@ -30,30 +30,36 @@ def preprocess(in_folder="CHEERS_challenge_round_1",
     Parameters
     ----------
     in_folder : Path or str
-                Path to the input data folder.
+        Path to the input data folder.
     out_folder : Path or str
-                Path to the output data folder
-    
-    Returns
-    -------
+        Path to the output data folder
+    verbose : int
+        Decides level of verbosity
     """
-    # load data    
+    # load data
+    if verbose > 0: print("Loading data...", end="")
     sents_train = pd.read_csv(in_folder+"/sentences_en_train.csv", converters={'sector_ids': literal_eval})
     sents_val = pd.read_csv(in_folder+"/sentences_en_val.csv", converters={'sector_ids': literal_eval})
     sents_test = pd.read_csv(in_folder+"/sentences_en_test.csv", converters={'sector_ids': literal_eval})
     docs_train = pd.read_csv(in_folder+"/documents_en_train.csv")
     docs_val = pd.read_csv(in_folder+"/documents_en_val.csv")
     docs_test = pd.read_csv(in_folder+"/documents_en_test.csv")
-    docs_train = docs_train.copy().set_index("doc_id")
-    docs_val = docs_val.copy().set_index("doc_id")
-    docs_test = docs_test.copy().set_index("doc_id")
+    if verbose > 0: print("done")
+
+    if verbose > 0: print("Indexing...", end="")
+    docs_train = docs_train.set_index("doc_id")
+    docs_val = docs_val.set_index("doc_id")
+    docs_test = docs_test.set_index("doc_id")
     sents_train["sentence_position"] = sents_train["sentence_id"].apply(lambda x: np.log(x + 1))
     sents_val["sentence_position"] = sents_val["sentence_id"].apply(lambda x: np.log(x + 1))
     sents_test["sentence_position"] = sents_test["sentence_id"].apply(lambda x: np.log(x + 1))
-    sents_train = sents_train.copy().set_index(["doc_id","sentence_id"])
-    sents_val = sents_val.copy().set_index(["doc_id","sentence_id"])
-    sents_test = sents_test.copy().set_index(["doc_id","sentence_id"])
-    
+    sents_train = sents_train.set_index(["doc_id","sentence_id"])
+    sents_val = sents_val.set_index(["doc_id","sentence_id"])
+    sents_test = sents_test.set_index(["doc_id","sentence_id"])
+    if verbose > 0: print("done")
+
+
+    if verbose > 0: print("Nominal Features to indices...", end="")
     # change nominal features to indices
     docs_train["doc_url"].fillna("",inplace=True)
     docs_val["doc_url"].fillna("",inplace=True)
@@ -78,7 +84,9 @@ def preprocess(in_folder="CHEERS_challenge_round_1",
     for item in docs_test.iterrows():
         if urlparse(item[1]["doc_url"]).netloc not in url_set:
             docs_test.loc[item[0], "url"] = len(url_set)
-    
+    if verbose > 0: print("done")
+
+    if verbose > 0: print("Extract textual features...", end="")
     # feature exctractor
     docs_train["text_length"] = docs_train["doc_text"].apply(len).apply(np.log)
     docs_val["text_length"] = docs_val["doc_text"].apply(len).apply(np.log)
@@ -89,27 +97,27 @@ def preprocess(in_folder="CHEERS_challenge_round_1",
     sents_train["sentence_length"] = sents_train["sentence_text"].apply(len).apply(np.log)
     sents_val["sentence_length"] = sents_val["sentence_text"].apply(len).apply(np.log)
     sents_test["sentence_length"] = sents_test["sentence_text"].apply(len).apply(np.log)
+    if verbose > 0: print("done")
     
     # normalization
-    t_l_scaler = StandardScaler().fit(docs_train["text_length"])
-    s_c_scaler = StandardScaler().fit(docs_train["sentence_count"])
-    s_l_scaler = StandardScaler().fit(sents_train["sentence_length"])
-    s_p_scaler = StandardScaler().fit(sents_train["sentence_position"])
+    if verbose > 0: print("Normalizing data...", end="")
+    # - docs
+    docs_scaler = StandardScaler().fit(docs_train[["sentence_count","text_length"]])
     
-    docs_train["text_length"] = t_l_scaler.transform(docs_train["text_length"])
-    docs_train["sentence_count"] = s_c_scaler.transform(docs_train["sentence_count"])
-    sents_train["sentence_length"] = s_l_scaler.transform(sents_train["sentence_length"])
-    sents_train["sentence_position"] = s_p_scaler.transform(sents_train["sentence_position"])
-    docs_val["text_length"] = t_l_scaler.transform(docs_val["text_length"])
-    docs_val["sentence_count"] = s_c_scaler.transform(docs_val["sentence_count"])
-    sents_val["sentence_length"] = s_l_scaler.transform(sents_val["sentence_length"])
-    sents_val["sentence_position"] = s_p_scaler.transform(sents_val["sentence_position"])
-    docs_test["text_length"] = t_l_scaler.transform(docs_test["text_length"])
-    docs_test["sentence_count"] = s_c_scaler.transform(docs_test["sentence_count"])
-    sents_test["sentence_length"] = s_l_scaler.transform(sents_test["sentence_length"])
-    sents_test["sentence_position"] = s_p_scaler.transform(sents_test["sentence_position"])
+    docs_train[["sentence_count","text_length"]] = docs_scaler.transform(docs_train[["sentence_count","text_length"]])
+    docs_val[["sentence_count","text_length"]] = docs_scaler.transform(docs_val[["sentence_count","text_length"]])
+    docs_test[["sentence_count","text_length"]] = docs_scaler.transform(docs_test[["sentence_count","text_length"]])
+
+    # - sents
+    sents_scaler = StandardScaler().fit(sents_train[["sentence_length", "sentence_position"]])
+
+    sents_train[["sentence_length", "sentence_position"]] = sents_scaler.transform(sents_train[["sentence_length", "sentence_position"]])
+    sents_val[["sentence_length", "sentence_position"]] = sents_scaler.transform(sents_val[["sentence_length", "sentence_position"]])
+    sents_test[["sentence_length", "sentence_position"]] = sents_scaler.transform(sents_test[["sentence_length", "sentence_position"]])
+    if verbose > 0: print("done")
     
     # tokenization
+    if verbose > 0: print("Bert Tokenizing textual data...", end="")
     sents_train["tokenized_sentence"] = sents_train["sentence_text"].apply(lambda x:\
                                 tokenizer(x, max_length=512, truncation="longest_first")["input_ids"])
     sents_val["tokenized_sentence"] = sents_val["sentence_text"].apply(lambda x:\
@@ -119,8 +127,10 @@ def preprocess(in_folder="CHEERS_challenge_round_1",
     sents_train.drop("sentence_text", axis="columns", inplace= True)
     sents_val.drop("sentence_text", axis="columns", inplace= True)
     sents_test.drop("sentence_text", axis="columns", inplace= True)
+    if verbose > 0: print("done")
     
     # remove unnecessary features
+    if verbose > 0: print("Removing irrelevant features...", end="")
     docs_train.drop("lang_code",axis="columns", inplace = True)
     docs_val.drop("lang_code",axis="columns", inplace = True)
     docs_test.drop("lang_code",axis="columns", inplace = True)
@@ -130,19 +140,25 @@ def preprocess(in_folder="CHEERS_challenge_round_1",
     docs_train.drop("doc_url",axis="columns", inplace = True)
     docs_val.drop("doc_url",axis="columns", inplace = True)
     docs_test.drop("doc_url",axis="columns", inplace = True)
+    if verbose > 0: print("done")
+
     
     # join the tables
+    if verbose > 0: print("Join data...", end="")
     joint_train = sents_train.join(docs_train, on="doc_id")
     joint_val = sents_val.join(docs_val, on="doc_id")
     joint_test = sents_test.join(docs_test, on="doc_id")
+    if verbose > 0: print("done")
+
+
     
-    if os.path.exists(out_folder):
-        shutil.rmtree(out_folder)
-    os.mkdir(out_folder)
-    
-    joint_train.to_hdf(os.path.join(out_folder, "train_joint.h5"), key='s')
-    joint_val.to_hdf(os.path.join(out_folder, "validation_joint.h5"), key='s')
-    joint_test.to_hdf(os.path.join(out_folder, "test_joint.h5"), key='s')
+    if verbose > 0: print("Outputting data...", end="")
+    Path(out_folder).mkdir(exist_ok=True, parents=True)
+
+    joint_train.to_hdf(os.path.join(out_folder, "train_joint.h5"), key='s', mode="w")
+    joint_val.to_hdf(os.path.join(out_folder, "validation_joint.h5"), key='s', mode="w")
+    joint_test.to_hdf(os.path.join(out_folder, "test_joint.h5"), key='s', mode="w")
+    if verbose > 0: print("done")
 
 
 class RelevantDataset(Dataset):
