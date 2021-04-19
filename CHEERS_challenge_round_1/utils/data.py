@@ -22,17 +22,24 @@ tokenizer = AutoTokenizer.from_pretrained('bert-base-cased')
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
-def preprocess(in_folder:str="CHEERS_challenge_round_1",out_folder:str="preprocessed_data/", verbose: int = 1):
+def preprocess(
+    in_folder: str = "CHEERS_challenge_round_1",
+    out_folder: str = "preprocessed_data/",
+    mode: str = "joint",
+    verbose: int = 1
+    ):
     """
     Preprocesses the raw data downloaded as the 
     CHEERS_challenge_round_1 folder.
     
     Parameters
     ----------
-    in_folder : Path or str
+    in_folder: Path or str
         Path to the input data folder.
-    out_folder : Path or str
+    out_folder: Path or str
         Path to the output data folder
+    mode: str
+        How to preprocess the data. This also has impact on the normalization. Can be "joint", TODO: add more, or not?
     verbose : int
         Decides level of verbosity
     """
@@ -99,23 +106,6 @@ def preprocess(in_folder:str="CHEERS_challenge_round_1",out_folder:str="preproce
     sents_test["sentence_length"] = sents_test["sentence_text"].apply(len).apply(np.log)
     if verbose > 0: print("done")
     
-    # normalization
-    if verbose > 0: print("Normalizing data...", end="")
-    # - docs
-    docs_scaler = StandardScaler().fit(docs_train[["sentence_count","text_length"]])
-    
-    docs_train[["sentence_count","text_length"]] = docs_scaler.transform(docs_train[["sentence_count","text_length"]])
-    docs_val[["sentence_count","text_length"]] = docs_scaler.transform(docs_val[["sentence_count","text_length"]])
-    docs_test[["sentence_count","text_length"]] = docs_scaler.transform(docs_test[["sentence_count","text_length"]])
-
-    # - sents
-    sents_scaler = StandardScaler().fit(sents_train[["sentence_length", "sentence_position"]])
-
-    sents_train[["sentence_length", "sentence_position"]] = sents_scaler.transform(sents_train[["sentence_length", "sentence_position"]])
-    sents_val[["sentence_length", "sentence_position"]] = sents_scaler.transform(sents_val[["sentence_length", "sentence_position"]])
-    sents_test[["sentence_length", "sentence_position"]] = sents_scaler.transform(sents_test[["sentence_length", "sentence_position"]])
-    if verbose > 0: print("done")
-    
     # tokenization
     if verbose > 0: print("Bert Tokenizing textual data...", end="")
     sents_train["tokenized_sentence"] = sents_train["sentence_text"].apply(lambda x:\
@@ -142,23 +132,34 @@ def preprocess(in_folder:str="CHEERS_challenge_round_1",out_folder:str="preproce
     docs_test.drop("doc_url",axis="columns", inplace = True)
     if verbose > 0: print("done")
 
+    if mode == "joint":
+        # join the tables
+        if verbose > 0: print("Join data...", end="")
+        joint_train = sents_train.join(docs_train, on="doc_id")
+        joint_val = sents_val.join(docs_val, on="doc_id")
+        joint_test = sents_test.join(docs_test, on="doc_id")
+        if verbose > 0: print("done")
+
+        # normalization
+        if verbose > 0: print("Normalizing data...", end="")
+        # - docs
+        scaler = StandardScaler().fit(joint_train[["sentence_count","text_length", "sentence_length", "sentence_position"]])
     
-    # join the tables
-    if verbose > 0: print("Join data...", end="")
-    joint_train = sents_train.join(docs_train, on="doc_id")
-    joint_val = sents_val.join(docs_val, on="doc_id")
-    joint_test = sents_test.join(docs_test, on="doc_id")
-    if verbose > 0: print("done")
+        joint_train[["sentence_count", "text_length", "sentence_length", "sentence_position"]] = scaler.transform(joint_train[["sentence_count", "text_length", "sentence_length", "sentence_position"]])
+        joint_val[["sentence_count", "text_length", "sentence_length", "sentence_position"]] = scaler.transform(joint_val[["sentence_count", "text_length", "sentence_length", "sentence_position"]])
+        joint_test[["sentence_count", "text_length", "sentence_length", "sentence_position"]] = scaler.transform(joint_test[["sentence_count", "text_length", "sentence_length", "sentence_position"]])
+
+        if verbose > 0: print("done")
 
 
     
-    if verbose > 0: print("Outputting data...", end="")
-    Path(out_folder).mkdir(exist_ok=True, parents=True)
+        if verbose > 0: print("Outputting data...", end="")
+        Path(out_folder).mkdir(exist_ok=True, parents=True)
 
-    joint_train.to_hdf(os.path.join(out_folder, "train_joint.h5"), key='s', mode="w")
-    joint_val.to_hdf(os.path.join(out_folder, "validation_joint.h5"), key='s', mode="w")
-    joint_test.to_hdf(os.path.join(out_folder, "test_joint.h5"), key='s', mode="w")
-    if verbose > 0: print("done")
+        joint_train.to_hdf(os.path.join(out_folder, "train_joint.h5"), key='s', mode="w")
+        joint_val.to_hdf(os.path.join(out_folder, "validation_joint.h5"), key='s', mode="w")
+        joint_test.to_hdf(os.path.join(out_folder, "test_joint.h5"), key='s', mode="w")
+        if verbose > 0: print("done")
 
 
 class RelevantDataset(Dataset):
