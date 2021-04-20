@@ -26,6 +26,8 @@ def preprocess(
     in_folder: str = "CHEERS_challenge_round_1",
     out_folder: str = "preprocessed_data/",
     mode: str = "joint",
+    output_label: str = None,
+    explode_sector_ids: bool = False,
     verbose: int = 1
     ):
     """
@@ -40,9 +42,15 @@ def preprocess(
         Path to the output data folder
     mode: str
         How to preprocess the data. This also has impact on the normalization. Can be "joint", TODO: add more, or not?
+    output_label: str
+        Decides the filename suffix of the files that will be created. If None then output_label = mode .
+    explode_sector_ids: bool
+        Wether to explode the sector_ids column (create an own column for each of the entries in the list)
+        If true then also a column "sample_weight" is added so these samples can be potentially downweighted
     verbose : int
         Decides level of verbosity
     """
+
     # load data
     if verbose > 0: print("Loading data...", end="")
     sents_train = pd.read_csv(in_folder+"/sentences_en_train.csv", converters={'sector_ids': literal_eval})
@@ -64,6 +72,15 @@ def preprocess(
     sents_val = sents_val.set_index(["doc_id","sentence_id"])
     sents_test = sents_test.set_index(["doc_id","sentence_id"])
     if verbose > 0: print("done")
+
+    if verbose > 0: print("Adding sample weights based on n_sector_ids...", end="")
+    #Add weighting column to be able to downweight this samples (since in the scoring function these samples are also only 50%)
+    #(one could even think of 1/len(x)**2 because first ofd these samples should only influence 50% so much since we split the samples
+    #  AND they are also going to be weighted only 50% officially)
+    joint_train["sample_weight"] = joint_train["sector_ids"].apply(lambda x: 1/len(x))
+    joint_val["sample_weight"] = joint_val["sector_ids"].apply(lambda x: 1/len(x))
+    joint_test["sample_weight"] = joint_test["sector_ids"].apply(lambda x: 1/len(x))
+    print("done")
 
 
     if verbose > 0: print("Nominal Features to indices...", end="")
@@ -151,14 +168,22 @@ def preprocess(
 
         if verbose > 0: print("done")
 
+        #Exploding of target column sector ids
+        if explode_sector_ids:
+            joint_train = joint_train.explode("sector_ids")
+            joint_val = joint_val.explode("sector_ids")
+            joint_test = join_text.explode("sector_ids")
 
     
         if verbose > 0: print("Outputting data...", end="")
         Path(out_folder).mkdir(exist_ok=True, parents=True)
 
-        joint_train.to_hdf(os.path.join(out_folder, "train_joint.h5"), key='s', mode="w")
-        joint_val.to_hdf(os.path.join(out_folder, "validation_joint.h5"), key='s', mode="w")
-        joint_test.to_hdf(os.path.join(out_folder, "test_joint.h5"), key='s', mode="w")
+        if output_label is None:
+            output_label = mode
+
+        joint_train.to_hdf(os.path.join(out_folder, f"train_{output_label}.h5"), key='s', mode="w")
+        joint_val.to_hdf(os.path.join(out_folder, f"validation_{output_label}.h5"), key='s', mode="w")
+        joint_test.to_hdf(os.path.join(out_folder, f"test_{output_label}.h5"), key='s', mode="w")
         if verbose > 0: print("done")
 
 
@@ -167,7 +192,7 @@ class RelevantDataset(Dataset):
         self,
         dataset: str,
         target_mode: str = "isrelevant",
-        device: str ="cpu",
+        device: str = "cpu",
         dimensions: tuple = None,
         load_only_relevant: bool = False
     ):
@@ -197,16 +222,28 @@ class RelevantDataset(Dataset):
             if not dimensions:
                 raise TypeError("Dimensions attribute is required for dataset type \"test\".")
         if load_only_relevant:
-            joint_dataframe = joint_dataframe[joint_dataframe["is_relevant"]==True]
+            joint_dataframe = joint_dataframe[joint_dataframe["is_relevant"] == True]
 
+    
+    
+    
         self.X = joint_dataframe[["sentence_position", "sentence_length", "tokenized_sentence", "project_name", "country_code", "url", "text_length", "sentence_count"]].to_numpy()
-        self.Y = joint_dataframe["is_relevant"].to_numpy()
+          
+        if target_mode == "isrelevant":
+            self.Y = joint_dataframe["is_relevant"].to_numpy()
+            if dimensions is None:
+                self.dimensions = ((1, (4, len(set(self.X[:,3])), len(set(self.X[:,4])), len(set(self.X[:,5])))), 1)
+            else:
+                self.dimensions = dimensions
+
+        if target_mode == "sentencetype":
+            self.Y = joint_dataframe["sector_ids"]
+            if dimensions is None:
+                self.dimensions = ((1, (4, len(set(self.X[:,3])), len(set(self.X[:,4])), len(set(self.X[:,5])))), 1)
+            else:
+                self.dimensions = dimensions
+            
         self.device = device
-        
-        if dimensions is None:
-            self.dimensions = ((1, (4, len(set(self.X[:,3])), len(set(self.X[:,4])), len(set(self.X[:,5])))), 2)
-        else:
-            self.dimensions = dimensions
         
     def __len__(self):
         return len(self.Y)
@@ -271,7 +308,7 @@ class IsRelevantDataset(Dataset):
         country_code_x = torch.tensor(x_tmp[4], device=self.device, dtype=torch.long)
         url_x = torch.tensor(x_tmp[5], device=self.device)
         
-        y = torch.tensor(self.Y[idx], device=self.device, dtype=torch.long)
+        y = torch.tensor(self.Y[idx], device=self.device)
 
         if x_train_ready or x_one_hot:
             project_name_x = nn.functional.one_hot(project_name_x, num_classes = self.dimensions[0][1][1])
