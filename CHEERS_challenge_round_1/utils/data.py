@@ -228,8 +228,6 @@ class RelevantDataset(Dataset):
             joint_dataframe = joint_dataframe[joint_dataframe["is_relevant"] == True]
 
     
-    
-    
         self.X = joint_dataframe[["sentence_position", "sentence_length", "tokenized_sentence", "project_name", "country_code", "url", "text_length", "sentence_count"]].to_numpy()
           
         if target_mode == "isrelevant":
@@ -240,7 +238,7 @@ class RelevantDataset(Dataset):
                 self.dimensions = dimensions
 
         if target_mode == "sentencetype":
-            self.Y = joint_dataframe["sector_ids"]
+            self.Y = joint_dataframe["sector_ids"].to_numpy()
             if dimensions is None:
                 self.dimensions = ((1, (4, len(set(self.X[:,3])), len(set(self.X[:,4])), len(set(self.X[:,5])))), 1)
             else:
