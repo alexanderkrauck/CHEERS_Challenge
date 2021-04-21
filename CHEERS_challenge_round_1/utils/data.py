@@ -23,7 +23,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 def preprocess(
-    in_folder: str = "CHEERS_challenge_round_1",
+    in_folder: str = "data_round_1",
     out_folder: str = "preprocessed_data/",
     mode: str = "joint",
     output_label: str = None,
@@ -72,15 +72,6 @@ def preprocess(
     sents_val = sents_val.set_index(["doc_id","sentence_id"])
     sents_test = sents_test.set_index(["doc_id","sentence_id"])
     if verbose > 0: print("done")
-
-    if verbose > 0: print("Adding sample weights based on n_sector_ids...", end="")
-    #Add weighting column to be able to downweight this samples (since in the scoring function these samples are also only 50%)
-    #(one could even think of 1/len(x)**2 because first ofd these samples should only influence 50% so much since we split the samples
-    #  AND they are also going to be weighted only 50% officially)
-    joint_train["sample_weight"] = joint_train["sector_ids"].apply(lambda x: 1/len(x))
-    joint_val["sample_weight"] = joint_val["sector_ids"].apply(lambda x: 1/len(x))
-    joint_test["sample_weight"] = joint_test["sector_ids"].apply(lambda x: 1/len(x))
-    print("done")
 
 
     if verbose > 0: print("Nominal Features to indices...", end="")
@@ -156,6 +147,18 @@ def preprocess(
         joint_val = sents_val.join(docs_val, on="doc_id")
         joint_test = sents_test.join(docs_test, on="doc_id")
         if verbose > 0: print("done")
+
+        if verbose > 0: print("Adding sample weights based on n_sector_ids...", end="")
+        #Add weighting column to be able to downweight this samples (since in the scoring function these samples
+        #are also only 50%)
+        #(one could even think of 1/len(x)**2 because first ofd these samples should only influence 50% so much
+        #since we split the samples
+        #  AND they are also going to be weighted only 50% officially)
+        joint_train["sample_weight"] = joint_train["sector_ids"].apply(lambda x: 1/len(x) if len(x) != 0 else 0)
+        joint_val["sample_weight"] = joint_val["sector_ids"].apply(lambda x: 1/len(x) if len(x) != 0 else 0)
+        # no sector ids key for the test data
+        # joint_test["sample_weight"] = joint_test["sector_ids"].apply(lambda x: 1/len(x) if len(x) != 0 else 0)
+        print("done")
 
         # normalization
         if verbose > 0: print("Normalizing data...", end="")
