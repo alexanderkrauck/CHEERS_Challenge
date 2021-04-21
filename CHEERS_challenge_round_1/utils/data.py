@@ -205,7 +205,8 @@ class RelevantDataset(Dataset):
         dataset : str
             Decides which dataset will be loaded. Can be either "train", "test" or "val".
         target_mode : str
-            Decides which target is returned in the __getitem__ function. Can be either "isrelevant", "sentencetype" or "both".TODO:!!!!
+            Decides which target is returned in the __getitem__ function.
+            Can be either "isrelevant", "sentencetype" or "both".TODO:!!!!
         device : str
             Decides on which device the torch tensors will be returned.
         dimensions : tuple
@@ -227,20 +228,46 @@ class RelevantDataset(Dataset):
         if load_only_relevant:
             joint_dataframe = joint_dataframe[joint_dataframe["is_relevant"] == True]
 
-    
-        self.X = joint_dataframe[["sentence_position", "sentence_length", "tokenized_sentence", "project_name", "country_code", "url", "text_length", "sentence_count"]].to_numpy()
           
         if target_mode == "isrelevant":
+            self.X = joint_dataframe[["sentence_position",
+                                      "sentence_length",
+                                      "tokenized_sentence", 
+                                      "project_name", 
+                                      "country_code",
+                                      "url",
+                                      "text_length",
+                                      "sentence_count"]].to_numpy()
             self.Y = joint_dataframe["is_relevant"].to_numpy()
             if dimensions is None:
-                self.dimensions = ((1, (4, len(set(self.X[:,3])), len(set(self.X[:,4])), len(set(self.X[:,5])))), 1)
+                self.dimensions = ((1, (4, 
+                                        len(set(self.X[:,3])), 
+                                        len(set(self.X[:,4])), 
+                                        len(set(self.X[:,5])))),
+                                   1)
             else:
                 self.dimensions = dimensions
 
         if target_mode == "sentencetype":
-            self.Y = joint_dataframe["sector_ids"].to_numpy()
+            self.X = joint_dataframe[joint_dataframe["is_relevant"] == 1][["sentence_position",
+                                                                           "sentence_length",
+                                                                           "tokenized_sentence",
+                                                                           "project_name", 
+                                                                           "country_code", 
+                                                                           "url", 
+                                                                           "text_length",
+                                                                           "sentence_count"]].to_numpy()
+            joint_dataframe.loc[joint_dataframe["sector_ids"].apply(len) == 0, "sector_ids"] = 11
+            joint_dataframe["sector_ids"] = joint_dataframe["sector_ids"].apply(lambda x: x[0] if type(x) != int else x)
+            self.Y = joint_dataframe[joint_dataframe["is_relevant"] == 1]["sector_ids"].to_numpy()
             if dimensions is None:
-                self.dimensions = ((1, (4, len(set(self.X[:,3])), len(set(self.X[:,4])), len(set(self.X[:,5])))), 1)
+                self.dimensions = ((1, (4, 
+                                        len(set(joint_dataframe.to_numpy()[:,5])), 
+                                        len(set(joint_dataframe.to_numpy()[:,6])),
+                                        len(set(joint_dataframe.to_numpy()[:,7]))
+                                       )
+                                   ),
+                                   len(set(self.Y[:])))
             else:
                 self.dimensions = dimensions
             
@@ -258,7 +285,10 @@ class RelevantDataset(Dataset):
         x_tmp = self.X[idx]
         metric_x = torch.tensor([x_tmp[0], x_tmp[1], x_tmp[6], x_tmp[7]], device=self.device)#numerical features
         sentence_x = torch.tensor(x_tmp[2], device=self.device, dtype=torch.long)#bert features
-        sentence_x = torch.cat((sentence_x, torch.zeros(512 - sentence_x.shape[0], device=self.device, dtype= torch.long)))
+        sentence_x = torch.cat((sentence_x, 
+                                torch.zeros(512 - sentence_x.shape[0],
+                                            device=self.device, 
+                                            dtype= torch.long)))
         
         #one hot features:
         project_name_x = torch.tensor(x_tmp[3], device=self.device, dtype=torch.long)
@@ -276,6 +306,7 @@ class RelevantDataset(Dataset):
             return (sentence_x, x_other), y
         
         return (sentence_x, (metric_x, project_name_x, country_code_x, url_x)), y
+        
         
         
         
