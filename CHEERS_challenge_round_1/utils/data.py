@@ -243,7 +243,7 @@ class RelevantDataset(Dataset):
                 self.dimensions = ((1, (4, 
                                         len(set(self.X[:,3])), 
                                         len(set(self.X[:,4])), 
-                                        len(set(self.X[:,5])))),
+                                        len(set(self.X[:,5]))+1)),
                                    1)
             else:
                 self.dimensions = dimensions
@@ -264,7 +264,7 @@ class RelevantDataset(Dataset):
                 self.dimensions = ((1, (4, 
                                         len(set(joint_dataframe.to_numpy()[:,5])), 
                                         len(set(joint_dataframe.to_numpy()[:,6])),
-                                        len(set(joint_dataframe.to_numpy()[:,7]))
+                                        len(set(joint_dataframe.to_numpy()[:,7]))+1
                                        )
                                    ),
                                    len(set(self.Y[:])))
@@ -306,8 +306,6 @@ class RelevantDataset(Dataset):
             return (sentence_x, x_other), y
         
         return (sentence_x, (metric_x, project_name_x, country_code_x, url_x)), y
-        Dataset
-        
         
         
 class IsRelevantDataset(Dataset):
