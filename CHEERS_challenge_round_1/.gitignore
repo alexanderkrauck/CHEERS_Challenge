@@ -3,3 +3,6 @@ Untitled.ipynb
 03_Relevant_Baseline.ipynb
 Untitled.ipynb
 Sector
+train_ds
+valid_ds
+sector_pred.csv
