@@ -28,7 +28,8 @@ def preprocess(
     mode: str = "joint",
     output_label: str = None,
     explode_sector_ids: bool = False,
-    verbose: int = 1
+    verbose: int = 1,
+    compute_bert_output: bool = False
     ):
     """
     Preprocesses the raw data downloaded as the 
@@ -49,6 +50,8 @@ def preprocess(
         If true then also a column "sample_weight" is added so these samples can be potentially downweighted
     verbose : int
         Decides level of verbosity
+    compute_bert_output : bool
+        Computes the bert output for each tokenized sentence if True
     """
 
     # load data
@@ -176,7 +179,69 @@ def preprocess(
             joint_train = joint_train.explode("sector_ids")
             joint_val = joint_val.explode("sector_ids")
             joint_test = join_text.explode("sector_ids")
+            
+            
+        if compute_bert_output:
+            if verbose > 0: print("Computing bert output...", end="")
+            from transformers import BertModel
+            bert_id = "google/bert_uncased_L-2_H-128_A-2"
+            bert = BertModel.from_pretrained(bert_id).to(device)
+            def bert_preprocess(tokenized_sent):
+                sentence = torch.tensor(tokenized_sent, device=device, dtype=torch.long)
+                sentence = torch.cat((sentence, 
+                                      torch.zeros(512 - sentence.shape[0], 
+                                                 device=device,
+                                                 dtype=torch.long)))
+                return sentence
 
+            def calc_bert(tokens):
+                sentence = bert_preprocess(tokens).unsqueeze(0).to(device)
+                output = bert(sentence)["last_hidden_state"][:,0].squeeze(0)
+                return output.detach().to("cpu").numpy()
+            joint_train["bert_output"] = joint_train["tokenized_sentence"].apply(calc_bert)
+            joint_val["bert_output"] = joint_val["tokenized_sentence"].apply(calc_bert)
+            joint_test["bert_output"] = joint_test["tokenized_sentence"].apply(calc_bert)
+            doc_sum = {}
+            doc_ids = set(map(lambda x: x[0], joint_train.index))
+            for doc_id in doc_ids:
+                sum_ = sum(joint_train.loc[doc_id, "bert_output"])
+                doc_sum[doc_id] = sum_
+            joint_train = joint_train.astype("object")
+            joint_train["bert_sum"] = [None for _ in range(len(joint_train))]
+            for index in joint_train.index:
+                joint_train.loc[index, "bert_sum"] = doc_sum[index[0]] - joint_train.loc[index, "bert_output"]
+            scaler = StandardScaler().fit(list(joint_train.bert_sum))
+            transformed = np.array(scaler.transform(list(joint_train.bert_sum)))
+            for idx, index in enumerate(joint_train.index):
+                joint_train.loc[index, "bert_sum"] = transformed[idx]
+            doc_sum = {}
+            doc_ids = set(map(lambda x: x[0], joint_val.index))
+            for doc_id in doc_ids:
+                sum_ = sum(joint_val.loc[doc_id, "bert_output"])
+                doc_sum[doc_id] = sum_
+            joint_val = joint_val.astype("object")
+            joint_val["bert_sum"] = [None for _ in range(len(joint_val))]
+            for index in joint_val.index:
+                joint_val.loc[index, "bert_sum"] = doc_sum[index[0]] - joint_val.loc[index, "bert_output"]
+            transformed = np.array(scaler.transform(list(joint_val.bert_sum)))
+            for idx, index in enumerate(joint_val.index):
+                joint_val.loc[index, "bert_sum"] = transformed[idx]
+            doc_sum = {}
+            doc_ids = set(map(lambda x: x[0], joint_test.index))
+            for doc_id in doc_ids:
+                sum_ = sum(joint_test.loc[doc_id, "bert_output"])
+                doc_sum[doc_id] = sum_
+            joint_test = joint_test.astype("object")
+            joint_test["bert_sum"] = [None for _ in range(len(joint_test))]
+            for index in joint_test.index:
+                joint_test.loc[index, "bert_sum"] = doc_sum[index[0]] - joint_test.loc[index, "bert_output"]
+            transformed = np.array(scaler.transform(list(joint_test.bert_sum)))
+            for idx, index in enumerate(joint_test.index):
+                joint_test.loc[index, "bert_sum"] = transformed[idx]
+            joint_train.drop("bert_output", axis=1, inplace=True)
+            joint_val.drop("bert_output", axis=1, inplace=True)
+            joint_test.drop("bert_output", axis=1, inplace=True)
+            print("done")
     
         if verbose > 0: print("Outputting data...", end="")
         Path(out_folder).mkdir(exist_ok=True, parents=True)
@@ -309,7 +374,129 @@ class RelevantDataset(Dataset):
         
         
 
+class RelevantDatasetV2(Dataset):
+    def __init__(
+        self,
+        dataset: str,
+        target_mode: str = "isrelevant",
+        device: str = "cpu",
+        dimensions: tuple = None,
+        load_only_relevant: bool = False
+    ):
+        """Constructor Function
+        Parameters
+        ----------
+        dataset : str
+            Decides which dataset will be loaded. Can be either "train", "test" or "val".
+        target_mode : str
+            Decides which target is returned in the __getitem__ function.
+            Can be either "isrelevant", "sentencetype" or "both".TODO:!!!!
+        device : str
+            Decides on which device the torch tensors will be returned.
+        dimensions : tuple
+            The dimensions to use for returning one hot encodings.
+        load_only_relevant : bool
+            If true the Dataset will only contain samples with the "relevant" target equal True.
+        """ 
 
+        if dataset == "train":
+            joint_dataframe = pd.read_hdf("./preprocessed_data/train_joint.h5", key="s")
+        if dataset == "val":
+            joint_dataframe = pd.read_hdf("./preprocessed_data/validation_joint.h5", key="s")
+            if not dimensions:
+                raise TypeError("Dimensions attribute is required for dataset type \"validation\".")
+        if dataset == "test":
+            joint_dataframe = pd.read_hdf("./preprocessed_data/test_joint.h5", key="s")
+            if not dimensions:
+                raise TypeError("Dimensions attribute is required for dataset type \"test\".")
+        if load_only_relevant:
+            joint_dataframe = joint_dataframe[joint_dataframe["is_relevant"] == True]
+        self.target_mode = target_mode
+                      
+        if target_mode == "isrelevant":
+            self.X = joint_dataframe[["sentence_position",
+                                      "sentence_length",
+                                      "tokenized_sentence", 
+                                      "project_name", 
+                                      "country_code",
+                                      "url",
+                                      "text_length",
+                                      "sentence_count",
+                                      "bert_sum",
+                                      "is_relevant"]].to_numpy()
+            if dimensions is None:
+                self.dimensions = ((1, (4, 
+                                        len(set(self.X[:,3])), 
+                                        len(set(self.X[:,4])), 
+                                        len(set(self.X[:,5]))+1,
+                                        len(self.X[0][-2]))
+                                   ),
+                                   1)
+            else:
+                self.dimensions = dimensions
+
+        if target_mode == "sentencetype":
+            self.X = joint_dataframe[joint_dataframe["is_relevant"] == 1][["sentence_position",
+                                                                          "sentence_length",
+                                                                          "tokenized_sentence", 
+                                                                          "project_name", 
+                                                                          "country_code",
+                                                                          "url",
+                                                                          "text_length",
+                                                                          "sentence_count",
+                                                                          "bert_sum",
+                                                                          "is_relevant",
+                                                                          "sector_ids"]]
+            self.X.loc[self.X["sector_ids"].apply(len) == 0, "sector_ids"] = 11
+            self.X["sector_ids"] = self.X["sector_ids"].apply(lambda x: x[0] if type(x) != int else x)
+            self.X = self.X[self.X["is_relevant"] == 1].to_numpy()
+            if dimensions is None:
+                self.dimensions = ((1, (4, 
+                                        len(set(joint_dataframe.loc[:, "project_name"])), 
+                                        len(set(joint_dataframe.loc[:, "country_code"])),
+                                        len(set(joint_dataframe.loc[:, "url"]))+1,
+                                        len(self.X[0, -3])
+                                       )
+                                   ),
+                                   len(set(self.X[:, -1])))
+            else:
+                self.dimensions = dimensions
+            
+        self.device = device
+        
+        
+    def __len__(self):
+        return len(self.X)
+    
+    
+    def __getitem__(self, idx, x_one_hot = True, x_train_ready = True):
+        
+        """
+        Note that x_train_ready implies x_one_hot
+        """
+        x_tmp = self.X[idx]
+        bert_sum = torch.from_numpy(x_tmp[8]).to(self.device)
+        metric_x = torch.tensor([x_tmp[0], x_tmp[1], x_tmp[6], x_tmp[7]], device=self.device)#numerical features
+        metric_x = torch.cat((metric_x, bert_sum))
+        sentence_x = torch.tensor(x_tmp[2], device=self.device, dtype=torch.long)#bert features
+        sentence_x = torch.cat((sentence_x, 
+                                torch.zeros(512 - sentence_x.shape[0],
+                                            device=self.device, 
+                                            dtype= torch.long)))
+        #one hot features:
+        project_name_x = torch.tensor(x_tmp[3], device=self.device, dtype=torch.long)
+        country_code_x = torch.tensor(x_tmp[4], device=self.device, dtype=torch.long)
+        url_x = torch.tensor(x_tmp[5], device=self.device)
+        y = torch.tensor(x_tmp[-1], device=self.device, dtype=torch.long)
+        if x_train_ready or x_one_hot:
+            project_name_x = nn.functional.one_hot(project_name_x, num_classes = self.dimensions[0][1][1])
+            country_code_x = nn.functional.one_hot(country_code_x, num_classes = self.dimensions[0][1][2])
+            url_x = nn.functional.one_hot(url_x, num_classes = self.dimensions[0][1][3])
+        if x_train_ready:
+            x_other = torch.cat((metric_x, project_name_x, country_code_x, url_x), dim=0).float()
+            return (sentence_x, x_other), y
+        
+        return (sentence_x, (metric_x, project_name_x, country_code_x, url_x)), y
 
 
 
