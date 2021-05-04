@@ -76,7 +76,6 @@ def preprocess(
     sents_test = sents_test.set_index(["doc_id","sentence_id"])
     if verbose > 0: print("done")
 
-
     if verbose > 0: print("Nominal Features to indices...", end="")
     # change nominal features to indices
     docs_train["doc_url"].fillna("",inplace=True)
