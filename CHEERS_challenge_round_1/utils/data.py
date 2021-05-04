@@ -328,7 +328,7 @@ class RelevantDataset(Dataset):
                 self.dimensions = ((1, (4, 
                                         len(set(joint_dataframe.to_numpy()[:,5])), 
                                         len(set(joint_dataframe.to_numpy()[:,6])),
-                                        len(set(joint_dataframe.to_numpy()[:,7]))+1
+                                        len(set(joint_dataframe.to_numpy()[:,7]))
                                        )
                                    ),
                                    len(set(self.Y[:])))
@@ -364,7 +364,10 @@ class RelevantDataset(Dataset):
         if x_train_ready or x_one_hot:
             project_name_x = nn.functional.one_hot(project_name_x, num_classes = self.dimensions[0][1][1])
             country_code_x = nn.functional.one_hot(country_code_x, num_classes = self.dimensions[0][1][2])
-            url_x = nn.functional.one_hot(url_x, num_classes = self.dimensions[0][1][3])
+            if url_x == self.dimensions[0][1][3]:#Set all zero if from unknown class (in validation set only)
+                url_x = torch.zeros(self.dimensions[0][1][3])
+            else:
+                url_x = nn.functional.one_hot(url_x, num_classes = self.dimensions[0][1][3])
         if x_train_ready:
             x_other = torch.cat((metric_x, project_name_x, country_code_x, url_x), dim=0)
             return (sentence_x, x_other), y
