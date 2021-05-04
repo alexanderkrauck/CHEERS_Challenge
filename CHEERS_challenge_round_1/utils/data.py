@@ -304,6 +304,10 @@ class RelevantDataset(Dataset):
                                       "text_length",
                                       "sentence_count"]].to_numpy()
             self.Y = joint_dataframe["is_relevant"].to_numpy()
+            self.prior = np.mean(self.Y)
+            #self.prior =  [(value, self.Y.count(value) / len(self.Y)) for value in set(self.Y)] 
+            #self.prior = sorted(self.prior, key = lambda x: x[0])
+            #self.prior = [relative_freq for key,relative_freq in self.prior]
             if dimensions is None:
                 self.dimensions = ((1, (4, 
                                         len(set(self.X[:,3])), 
