@@ -261,7 +261,8 @@ class RelevantDataset(Dataset):
         target_mode: str = "isrelevant",
         device: str = "cpu",
         dimensions: tuple = None,
-        load_only_relevant: bool = False
+        load_only_relevant: bool = False,
+        move_to_tensor: bool = True
     ):
         """Constructor Function
         Parameters
@@ -340,6 +341,7 @@ class RelevantDataset(Dataset):
                 self.dimensions = dimensions
             
         self.device = device
+        self.move_to_tensor = move_to_tensor
         
     def __len__(self):
         return len(self.Y)
@@ -351,32 +353,68 @@ class RelevantDataset(Dataset):
         Note that x_train_ready implies x_one_hot
         """
         x_tmp = self.X[idx]
-        metric_x = torch.tensor([x_tmp[0], x_tmp[1], x_tmp[6], x_tmp[7]], device=self.device)#numerical features
-        sentence_x = torch.tensor(x_tmp[2], device=self.device, dtype=torch.long)#bert features
-        sentence_x = torch.cat((sentence_x, 
-                                torch.zeros(512 - sentence_x.shape[0],
-                                            device=self.device, 
-                                            dtype= torch.long)))
-        
-        #one hot features:
-        project_name_x = torch.tensor(x_tmp[3], device=self.device, dtype=torch.long)
-        country_code_x = torch.tensor(x_tmp[4], device=self.device, dtype=torch.long)
-        url_x = torch.tensor(x_tmp[5], device=self.device)
-        
-        y = torch.tensor(self.Y[idx], device=self.device, dtype=torch.long)
 
-        if x_train_ready or x_one_hot:
-            project_name_x = nn.functional.one_hot(project_name_x, num_classes = self.dimensions[0][1][1])
-            country_code_x = nn.functional.one_hot(country_code_x, num_classes = self.dimensions[0][1][2])
-            if url_x == self.dimensions[0][1][3]:#Set all zero if from unknown class (in validation set only)
-                url_x = torch.zeros(self.dimensions[0][1][3])
-            else:
-                url_x = nn.functional.one_hot(url_x, num_classes = self.dimensions[0][1][3])
-        if x_train_ready:
-            x_other = torch.cat((metric_x, project_name_x, country_code_x, url_x), dim=0)
-            return (sentence_x, x_other), y
-        
-        return (sentence_x, (metric_x, project_name_x, country_code_x, url_x)), y
+        if not self.move_to_tensor:
+            metric_x = np.array([x_tmp[0], x_tmp[1], x_tmp[6], x_tmp[7]])
+            sentence_x = np.array(x_tmp[2], dtype=np.int32)
+            sentence_x = np.concatenate([sentence_x, np.zeros(512 - sentence_x.shape[0], dtype=np.int32)], dtype=np.int32)
+            project_name_x = x_tmp[3]
+            country_code_x = x_tmp[4]
+            url_x = x_tmp[5]
+
+            y = self.Y[idx]
+
+            if x_one_hot or x_train_ready:
+                tmp = np.zeros(self.dimensions[0][1][1])
+                tmp[project_name_x] = 1
+                project_name_x = tmp
+
+                tmp = np.zeros(self.dimensions[0][1][2])
+                tmp[country_code_x] = 1
+                country_code_x = tmp
+
+                if url_x == self.dimensions[0][1][3]:#Set all zero if from unknown class (in validation set only)
+                    url_x = np.zeros(self.dimensions[0][1][3])
+                else:
+                    tmp = np.zeros(self.dimensions[0][1][3])
+                    tmp[url_x] = 1
+                    url_x = tmp
+
+            if x_train_ready:
+                x_other = np.concatenate((metric_x, project_name_x, country_code_x, url_x), axis=0, dtype=float)
+                return (sentence_x, x_other), y
+
+            return (sentence_x, (metric_x, project_name_x, country_code_x, url_x)), y
+
+
+        else:
+
+            metric_x = torch.tensor([x_tmp[0], x_tmp[1], x_tmp[6], x_tmp[7]], device=self.device)#numerical features
+            sentence_x = torch.tensor(x_tmp[2], device=self.device, dtype=torch.long)#bert features
+            sentence_x = torch.cat((sentence_x, 
+                                    torch.zeros(512 - sentence_x.shape[0],
+                                                device=self.device, 
+                                                dtype= torch.long)))
+            
+            #one hot features:
+            project_name_x = torch.tensor(x_tmp[3], device=self.device, dtype=torch.long)
+            country_code_x = torch.tensor(x_tmp[4], device=self.device, dtype=torch.long)
+            url_x = torch.tensor(x_tmp[5], device=self.device)
+            
+            y = torch.tensor(self.Y[idx], device=self.device, dtype=torch.long)
+
+            if x_train_ready or x_one_hot:
+                project_name_x = nn.functional.one_hot(project_name_x, num_classes = self.dimensions[0][1][1])
+                country_code_x = nn.functional.one_hot(country_code_x, num_classes = self.dimensions[0][1][2])
+                if url_x == self.dimensions[0][1][3]:#Set all zero if from unknown class (in validation set only)
+                    url_x = torch.zeros(self.dimensions[0][1][3])
+                else:
+                    url_x = nn.functional.one_hot(url_x, num_classes = self.dimensions[0][1][3])
+            if x_train_ready:
+                x_other = torch.cat((metric_x, project_name_x, country_code_x, url_x), dim=0)
+                return (sentence_x, x_other), y
+            
+            return (sentence_x, (metric_x, project_name_x, country_code_x, url_x)), y
         
         
 
