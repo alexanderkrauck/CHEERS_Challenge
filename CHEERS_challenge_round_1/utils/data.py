@@ -288,12 +288,13 @@ class RelevantDataset(Dataset):
                 raise TypeError("Dimensions attribute is required for dataset type \"validation\".")
         if dataset == "test":
             joint_dataframe = pd.read_hdf("./preprocessed_data/test_joint.h5", key="s")
+
+            self.ID = dataset[["doc_id", "sentence_id"]].to_numpy()
             if not dimensions:
                 raise TypeError("Dimensions attribute is required for dataset type \"test\".")
         if load_only_relevant:
             joint_dataframe = joint_dataframe[joint_dataframe["is_relevant"] == True]
 
-          
         if target_mode == "isrelevant":
             self.X = joint_dataframe[["sentence_position",
                                       "sentence_length",
@@ -342,6 +343,7 @@ class RelevantDataset(Dataset):
             
         self.device = device
         self.move_to_tensor = move_to_tensor
+        #self.dataset = dataset
         
     def __len__(self):
         return len(self.Y)
@@ -382,9 +384,14 @@ class RelevantDataset(Dataset):
 
             if x_train_ready:
                 x_other = np.concatenate((metric_x, project_name_x, country_code_x, url_x), axis=0, dtype=float)
+                #if self.dataset != "test":
                 return (sentence_x, x_other), y
-
+                #else:
+                    #return self.ID[idx], (sentence_x, x_other), y
+            #if self.dataset != "test":
             return (sentence_x, (metric_x, project_name_x, country_code_x, url_x)), y
+            #else:
+                #return self.ID[idx], (sentence_x, (metric_x, project_name_x, country_code_x, url_x)), y
 
 
         else:
@@ -412,9 +419,15 @@ class RelevantDataset(Dataset):
                     url_x = nn.functional.one_hot(url_x, num_classes = self.dimensions[0][1][3])
             if x_train_ready:
                 x_other = torch.cat((metric_x, project_name_x, country_code_x, url_x), dim=0)
+                #if self.dataset != "test":
                 return (sentence_x, x_other), y
-            
+                #else:
+                    #return self.ID[idx], (sentence_x, x_other), y
+            #if self.dataset != "test":
             return (sentence_x, (metric_x, project_name_x, country_code_x, url_x)), y
+            #else:
+            #    return self.ID[idx], (sentence_x, (metric_x, project_name_x, country_code_x, url_x)), y
+
         
         
 
